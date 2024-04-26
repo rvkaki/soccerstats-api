@@ -341,19 +341,19 @@ def get_goal_play(match_id: int, event_id: int):
 
 # FBREF API
 
-@app.get("/api/teams/{team_id}")
-def get_team(team_id: int):
-    fbref = sd.FBref(leagues=WorldCupFBRefId, seasons=WorldCupFBRefSeasonId)
-    stats = fbref.read_player_match_stats()
-    for key, row in stats.iterrows():
-        print(key)
-        # ('PRT-PrimeiraLiga', '2324', '2023-08-11 Braga-Famalicão', 'Braga', 'Abel Ruiz')
-        stat = row.to_dict()
-        print(stat)
-        for key, value in row.items():
-            keys = list(key)
-            print(keys, value)  # ['min', ''] 90 / ['Performance', 'Gls'] 0
-        exit()
+# @app.get("/api/teams/{team_id}")
+# def get_team(team_id: int):
+#     fbref = sd.FBref(leagues=WorldCupFBRefId, seasons=WorldCupFBRefSeasonId)
+#     stats = fbref.read_player_match_stats()
+#     for key, row in stats.iterrows():
+#         print(key)
+#         # ('PRT-PrimeiraLiga', '2324', '2023-08-11 Braga-Famalicão', 'Braga', 'Abel Ruiz')
+#         stat = row.to_dict()
+#         print(stat)
+#         for key, value in row.items():
+#             keys = list(key)
+#             print(keys, value)  # ['min', ''] 90 / ['Performance', 'Gls'] 0
+#         exit()
 
 # Find in a pandas dataframe the row where match_report includes {match_id}
 # Assume matches is a pandas dataframe with a column match_report
