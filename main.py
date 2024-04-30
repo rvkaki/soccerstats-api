@@ -115,60 +115,78 @@ def get_match_summary(match_id: int):
     fbref = sd.FBref(leagues=WorldCupFBRefId, seasons=WorldCupFBRefSeasonId)
     result = {}
 
-    poss_stats = fbref.read_team_match_stats(stat_type='possession')
-    poss_match = poss_stats[poss_stats["match_report"].str.contains(
-        fbrefMatchId)]
+    try:
+        poss_stats = fbref.read_team_match_stats(stat_type='possession')
+        poss_match = poss_stats[poss_stats["match_report"].str.contains(
+            fbrefMatchId)]
+        for key, row in poss_match.iterrows():
+            print(key)
+            print(row.to_dict())
+            team = key[2]
+            result[team] = {}
+            result[team]["Poss"] = row["Poss"]['']
+            result[team]["Touches in Att 3rd"] = row["Touches"]["Att 3rd"]
+    except Exception as e:
+        print("Possession error", e)
 
-    for key, row in poss_match.iterrows():
-        print(key)
-        print(row.to_dict())
-        team = key[2]
-        result[team] = {}
-        result[team]["Poss"] = row["Poss"]['']
-        result[team]["Touches in Att 3rd"] = row["Touches"]["Att 3rd"]
+    try:
+        shooting_stats = fbref.read_team_match_stats(
+            stat_type='shooting')
+        shooting_match = shooting_stats[shooting_stats["match_report"].str.contains(
+            fbrefMatchId)]
 
-    shooting_stats = fbref.read_team_match_stats(
-        stat_type='shooting')
-    shooting_match = shooting_stats[shooting_stats["match_report"].str.contains(
-        fbrefMatchId)]
+        for key, row in shooting_match.iterrows():
+            team = key[2]
+            result[team]["Shots"] = row["Standard"]["Sh"]
+            result[team]["Shots on Target"] = row["Standard"]["SoT"]
+    except Exception as e:
+        print("Shooting error", e)
 
-    for key, row in shooting_match.iterrows():
-        team = key[2]
-        result[team]["Shots"] = row["Standard"]["Sh"]
-        result[team]["Shots on Target"] = row["Standard"]["SoT"]
+    try:
+        passing_stats = fbref.read_team_match_stats(stat_type='passing')
+        passing_match = passing_stats[passing_stats["match_report"].str.contains(
+            fbrefMatchId)]
 
-    passing_stats = fbref.read_team_match_stats(stat_type='passing')
-    passing_match = passing_stats[passing_stats["match_report"].str.contains(
-        fbrefMatchId)]
+        for key, row in passing_match.iterrows():
+            team = key[2]
+            result[team]["Passing Accuracy"] = row["Total"]["Cmp%"]
+            result[team]["Forward Passing"] = row["PrgP"]['']
+    except Exception as e:
+        print("Passing error", e)
 
-    for key, row in passing_match.iterrows():
-        team = key[2]
-        result[team]["Passing Accuracy"] = row["Total"]["Cmp%"]
-        result[team]["Forward Passing"] = row["PrgP"]['']
+    try:
+        defensive_stats = fbref.read_team_match_stats(stat_type='defense')
+        defensive_match = defensive_stats[defensive_stats["match_report"].str.contains(
+            fbrefMatchId)]
 
-    defensive_stats = fbref.read_team_match_stats(stat_type='defense')
-    defensive_match = defensive_stats[defensive_stats["match_report"].str.contains(
-        fbrefMatchId)]
+        for key, row in defensive_match.iterrows():
+            team = key[2]
+            result[team]["Def. Actions in Att 3d"] = row["Tackles"]["Att 3rd"]
+    except Exception as e:
+        print("Defensive error", e)
 
-    for key, row in defensive_match.iterrows():
-        team = key[2]
-        result[team]["Def. Actions in Att 3d"] = row["Tackles"]["Att 3rd"]
+    try:
+        pass_type_stats = fbref.read_team_match_stats(
+            stat_type='passing_types')
+        pass_type_match = pass_type_stats[pass_type_stats["match_report"].str.contains(
+            fbrefMatchId)]
 
-    pass_type_stats = fbref.read_team_match_stats(stat_type='passing_types')
-    pass_type_match = pass_type_stats[pass_type_stats["match_report"].str.contains(
-        fbrefMatchId)]
+        for key, row in pass_type_match.iterrows():
+            team = key[2]
+            result[team]["Corners"] = row["Pass Types"]["CK"]
+    except Exception as e:
+        print("Pass Type error", e)
 
-    for key, row in pass_type_match.iterrows():
-        team = key[2]
-        result[team]["Corners"] = row["Pass Types"]["CK"]
+    try:
+        misc_stats = fbref.read_team_match_stats(stat_type='misc')
+        misc_match = misc_stats[misc_stats["match_report"].str.contains(
+            fbrefMatchId)]
 
-    misc_stats = fbref.read_team_match_stats(stat_type='misc')
-    misc_match = misc_stats[misc_stats["match_report"].str.contains(
-        fbrefMatchId)]
-
-    for key, row in misc_match.iterrows():
-        team = key[2]
-        result[team]["Fouls Committed"] = row["Performance"]["Fls"]
+        for key, row in misc_match.iterrows():
+            team = key[2]
+            result[team]["Fouls Committed"] = row["Performance"]["Fls"]
+    except Exception as e:
+        print("Misc error", e)
 
     return result
 
