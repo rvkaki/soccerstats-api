@@ -10,6 +10,7 @@ app = FastAPI()
 
 origins = [
     "http://localhost:3000",
+    "https://soccerstats-ten.vercel.app/"
 ]
 
 app.add_middleware(
