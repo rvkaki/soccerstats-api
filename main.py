@@ -187,7 +187,7 @@ def get_match_summary(match_id: int):
 
     for receipt in ball_receipts:
         team_id = receipt["team_id"]
-        if receipt["location"][0] >= 80 and receipt["ball_receipt_outcome"] is not "Incomplete":
+        if receipt["location"][0] >= 80 and receipt["ball_receipt_outcome"] != "Incomplete":
             result[team_id]["Touches in Att 3rd"] += 1
 
     for shot in shots:
@@ -213,7 +213,7 @@ def get_match_summary(match_id: int):
 
     for ball_recovery in ball_recoveries:
         team_id = ball_recovery["team_id"]
-        if ball_recovery["location"][0] >= 80 and ball_recovery["ball_recovery_recovery_failure"] is not True:
+        if ball_recovery["location"][0] >= 80 and ball_recovery["ball_recovery_recovery_failure"] != True:
             result[team_id]["Def. Actions in Att 3d"] += 1
 
     for clearance in clearances:
