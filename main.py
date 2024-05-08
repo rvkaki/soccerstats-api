@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from statsbombpy import sb
 import math
-import json
+import requests
 
 WorldCupSBId = 43
 WorldCupSBSeasonId = 106
 
+data_url = "https://raw.githubusercontent.com/statsbomb/open-data/master/data"
 
 app = FastAPI()
 
@@ -21,43 +21,42 @@ app.add_middleware(
 
 @app.get("/api/matches")
 def get_matches():
-    competitions = sb.competitions()
-    competition = competitions[(competitions["competition_id"] == WorldCupSBId) &
-                               (competitions["season_id"] == WorldCupSBSeasonId)]
-    matches = sb.matches(competition_id=WorldCupSBId,
-                         season_id=WorldCupSBSeasonId).to_json(orient="records")
-    competition = competition.to_json(orient="records")
-    return {"competition": json.loads(competition)[0], "matches": json.loads(matches)}
+    matches = requests.get(
+        f"{data_url}/matches/{WorldCupSBId}/{WorldCupSBSeasonId}.json").json()
+    competitions = requests.get(f"{data_url}/competitions.json").json()
+    competition = list(
+        filter(lambda x: x["competition_id"] == WorldCupSBId, competitions))[0]
+    return {"competition": competition, "matches": matches}
 
 
 @app.get("/api/matches/{match_id}")
 def get_match(match_id: int):
-    matches = sb.matches(competition_id=WorldCupSBId,
-                         season_id=WorldCupSBSeasonId)
-    match = matches[matches["match_id"] == match_id].to_json(orient="records")
-    return json.loads(match)[0]
+    matches = requests.get(
+        f"{data_url}/matches/{WorldCupSBId}/{WorldCupSBSeasonId}.json").json()
+    match = list(filter(lambda x: x["match_id"] == match_id, matches))[0]
+    return match
 
 
 @app.get("/api/matches/{match_id}/teams")
 def get_match_teams(match_id: int):
-    events = sb.events(match_id=match_id, split=True,
-                       flatten_attrs=False)
-    lineups = events["starting_xis"]
-    substitutions = events["substitutions"]
-    lineups = lineups.to_json(orient="records")
-    substitutions = substitutions.to_json(orient="records")
+    events = list(requests.get(f"{data_url}/events/{match_id}.json").json())
+
+    lineups = list(filter(lambda x: x["type"]
+                   ["name"] == "Starting XI", events))
+    substitutions = list(
+        filter(lambda x: x["type"]["name"] == "Substitution", events))
 
     res = []
-    for lineup in json.loads(lineups):
-        team = {"id": lineup["team_id"], "name": lineup["team"]}
+    for lineup in lineups:
+        team = lineup["team"]
         team_players = []
         for player in lineup["tactics"]["lineup"]:
             team_players.append(
-                {**player["player"], "position": player["position"], "jersey_number": player["jersey_number"], "team_id": lineup["team_id"], "is_starter": True})
+                {**player["player"], "position": player["position"], "jersey_number": player["jersey_number"], "team_id": lineup["team"]["id"], "is_starter": True})
         res.append({**team, "players": team_players})
 
-    for substitution in json.loads(substitutions):
-        team_id = substitution["team_id"]
+    for substitution in substitutions:
+        team_id = substitution["team"]["id"]
         player = substitution["substitution"]["replacement"]
         player["position"] = substitution["position"]
         player["is_starter"] = False
@@ -71,13 +70,12 @@ def get_match_teams(match_id: int):
 
 @app.get("/api/matches/{match_id}/pass-tendencies")
 def get_match_pass_tendencies(match_id: int):
-    events = sb.events(match_id=match_id, split=True,
-                       flatten_attrs=False)
-    passes = events["passes"].to_dict(orient="records")
+    events = list(requests.get(f"{data_url}/events/{match_id}.json").json())
+    passes = list(filter(lambda x: x["type"]["name"] == "Pass", events))
     # {[player_id]: {"positions": [0, 0][], passes: {[player_id]: 0}}}
     pass_tendencies = {}
     for pass_ in passes:
-        player_id = pass_["player_id"]
+        player_id = pass_["player"]["id"]
         location = pass_["location"]
 
         if player_id not in pass_tendencies:
@@ -115,7 +113,7 @@ def is_progressive_pass(pass_):
     # A pass is considered progressive if the distance between the starting point and the next touch is:
     goal_location = [120, 40]
     start_location = pass_["location"]
-    end_location = pass_["pass_end_location"]
+    end_location = pass_["pass"]["end_location"]
 
     if start_location[0] >= end_location[0]:
         return False
@@ -144,19 +142,23 @@ def is_progressive_pass(pass_):
 @app.get("/api/matches/{match_id}/summary")
 def get_match_summary(match_id: int):
     result = {}
-    events = sb.events(match_id=match_id, split=True,
-                       flatten_attrs=True)
-    passes = events["passes"].to_dict(orient="records")
-    ball_receipts = events["ball_receipts"].to_dict(orient="records")
-    shots = events["shots"].to_dict(orient="records")
-    blocks = events["blocks"].to_dict(orient="records")
-    interceptions = events["interceptions"].to_dict(orient="records")
-    ball_recoveries = events["ball_recoverys"].to_dict(orient="records")
-    clearances = events["clearances"].to_dict(orient="records")
-    fouls_committed = events["foul_committeds"].to_dict(orient="records")
+    events = list(requests.get(f"{data_url}/events/{match_id}.json").json())
+    passes = list(filter(lambda x: x["type"]["name"] == "Pass", events))
+    ball_receipts = list(
+        filter(lambda x: x["type"]["name"] == "Ball Receipt*", events))
+    shots = list(filter(lambda x: x["type"]["name"] == "Shot", events))
+    blocks = list(filter(lambda x: x["type"]["name"] == "Block", events))
+    interceptions = list(
+        filter(lambda x: x["type"]["name"] == "Interception", events))
+    ball_recoveries = list(
+        filter(lambda x: x["type"]["name"] == "Ball Recovery", events))
+    clearances = list(
+        filter(lambda x: x["type"]["name"] == "Clearance", events))
+    fouls_committed = list(
+        filter(lambda x: x["type"]["name"] == "Foul Committed", events))
 
     for pass_ in passes:
-        team_id = pass_["team_id"]
+        team_id = pass_["team"]["id"]
         if team_id not in result:
             result[team_id] = {
                 "passes": 0,
@@ -174,10 +176,10 @@ def get_match_summary(match_id: int):
 
         result[team_id]["passes"] += 1
 
-        if pass_["pass_type"] == "Corner":
+        if "type" in pass_["pass"] and pass_["pass"]["type"]["name"] == "Corner":
             result[team_id]["Corners"] += 1
 
-        if not isinstance(pass_["pass_outcome"], str):
+        if "recipient" in pass_["pass"]:
             result[team_id]["passes_completed"] += 1
             if is_progressive_pass(pass_):
                 result[team_id]["Forward Passing"] += 1
@@ -186,43 +188,43 @@ def get_match_summary(match_id: int):
             result[team_id]["Touches in Att 3rd"] += 1
 
     for receipt in ball_receipts:
-        team_id = receipt["team_id"]
-        if receipt["location"][0] >= 80 and receipt["ball_receipt_outcome"] != "Incomplete":
+        team_id = receipt["team"]["id"]
+        if receipt["location"][0] >= 80 and "ball_receipt" in receipt and receipt["ball_receipt"]["outcome"]["name"] != "Incomplete":
             result[team_id]["Touches in Att 3rd"] += 1
 
     for shot in shots:
-        team_id = shot["team_id"]
+        team_id = shot["team"]["id"]
         result[team_id]["Shots"] += 1
 
-        end_location = shot["shot_end_location"]
+        end_location = shot["shot"]["end_location"]
         if len(end_location) == 3:
             x, y, z = end_location
             if y >= 36 and y <= 44 and z >= 0 and z <= 2.67:
                 result[team_id]["Shots on Target"] += 1
 
     for block in blocks:
-        team_id = block["team_id"]
+        team_id = block["team"]["id"]
         if block["location"][0] >= 80:
             result[team_id]["Def. Actions in Att 3d"] += 1
 
     for interception in interceptions:
-        team_id = interception["team_id"]
-        outcome = interception["interception_outcome"]
+        team_id = interception["team"]["id"]
+        outcome = interception["interception"]["outcome"]
         if interception["location"][0] >= 80 and outcome == "Won" or outcome == "Success" or outcome == "Success In Play" or outcome == "Success Out":
             result[team_id]["Def. Actions in Att 3d"] += 1
 
     for ball_recovery in ball_recoveries:
-        team_id = ball_recovery["team_id"]
-        if ball_recovery["location"][0] >= 80 and ball_recovery["ball_recovery_recovery_failure"] != True:
+        team_id = ball_recovery["team"]["id"]
+        if ball_recovery["location"][0] >= 80 and "ball_recovery" in ball_recovery and "recovery_failure" in ball_recovery["ball_recovery"] and ball_recovery["ball_recovery"]["recovery_failure"] != True:
             result[team_id]["Def. Actions in Att 3d"] += 1
 
     for clearance in clearances:
-        team_id = clearance["team_id"]
+        team_id = clearance["team"]["id"]
         if clearance["location"][0] >= 80:
             result[team_id]["Def. Actions in Att 3d"] += 1
 
     for foul in fouls_committed:
-        team_id = foul["team_id"]
+        team_id = foul["team"]["id"]
         result[team_id]["Fouls Committed"] += 1
 
     team_a, team_b = list(result.keys())
@@ -273,33 +275,34 @@ def get_player_stats_by_id(match_id: int, player_id: int):
         "Tackles": 0,
         "Dribbled Past": 0,
     }
-    events = sb.events(match_id=match_id, split=True, flatten_attrs=True)
-    lineups = events["starting_xis"].to_dict(orient="records")
+    events = list(requests.get(f"{data_url}/events/{match_id}.json").json())
+    lineups = list(filter(lambda x: x["type"]
+                   ["name"] == "Starting XI", events))
 
-    keeper_events = list(filter(lambda x: x['player_id'] == player_id,
-                                events["goal_keepers"].to_dict(orient="records")))
+    keeper_events = list(filter(
+        lambda x: x["type"]["name"] == "Goal Keeper" and x['player']["id"] == player_id, events))
     shots = list(filter(
-        lambda x: x['player_id'] == player_id, events["shots"].to_dict(orient="records")))
+        lambda x: x["type"]["name"] == "Shot" and x['player']["id"] == player_id, events))
     passes = list(filter(
-        lambda x: x['player_id'] == player_id, events["passes"].to_dict(orient="records")))
+        lambda x: x["type"]["name"] == "Pass" and x['player']["id"] == player_id, events))
     receptions = list(filter(
-        lambda x: x['player_id'] == player_id, events["ball_receipts"].to_dict(orient="records")))
+        lambda x: x["type"]["name"] == "Ball Receipt*" and x['player']["id"] == player_id, events))
     duels = list(filter(
-        lambda x: x['player_id'] == player_id, events["duels"].to_dict(orient="records")))
+        lambda x: x["type"]["name"] == "Duel" and x['player']["id"] == player_id, events))
     fouls = list(filter(
-        lambda x: x['player_id'] == player_id, events["foul_committeds"].to_dict(orient="records")))
+        lambda x: x["type"]["name"] == "Foul Committed" and x['player']["id"] == player_id, events))
     fouls_won = list(filter(
-        lambda x: x['player_id'] == player_id, events["foul_wons"].to_dict(orient="records")))
+        lambda x: x["type"]["name"] == "Foul Won" and x['player']["id"] == player_id, events))
     clearances = list(filter(
-        lambda x: x['player_id'] == player_id, events["clearances"].to_dict(orient="records")))
+        lambda x: x["type"]["name"] == "Clearance" and x['player']["id"] == player_id, events))
     interceptions = list(filter(
-        lambda x: x['player_id'] == player_id, events["interceptions"].to_dict(orient="records")))
+        lambda x: x["type"]["name"] == "Interception" and x['player']["id"] == player_id, events))
     dribbles = list(filter(
-        lambda x: x['player_id'] == player_id, events["dribbles"].to_dict(orient="records")))
+        lambda x: x["type"]["name"] == "Dribble" and x['player']["id"] == player_id, events))
     blocks = list(filter(
-        lambda x: x['player_id'] == player_id, events["blocks"].to_dict(orient="records")))
+        lambda x: x["type"]["name"] == "Block" and x['player']["id"] == player_id, events))
     dribbled_pasts = list(filter(
-        lambda x: x['player_id'] == player_id, events["dribbled_pasts"].to_dict(orient="records")))
+        lambda x: x["type"]["name"] == "Dribbled Past" and x['player']["id"] == player_id, events))
 
     position = None
     for lineup in lineups:
@@ -317,15 +320,15 @@ def get_player_stats_by_id(match_id: int, player_id: int):
         result["Keeper Sweeper"] = 0
 
         for k in keeper_events:
-            if k["goalkeeper_type"] == "Punch":
+            if k["goalkeeper"]["type"]["name"] == "Punch":
                 result["Punches"] += 1
-            elif k["goalkeeper_type"] == "Keeper Sweeper":
+            elif k["goalkeeper"]["type"]["name"] == "Keeper Sweeper":
                 result["Keeper Sweeper"] += 1
-            elif "Saved" in k["goalkeeper_type"]:
+            elif "Saved" in k["goalkeeper"]["type"]["name"]:
                 result["Saves"] += 1
 
     for shot in shots:
-        outcome = shot["shot_outcome"]
+        outcome = shot["shot"]["outcome"]["name"]
         if outcome == "Goal":
             result["Goals"] += 1
         elif outcome == "Off T" or outcome == "Saved Off T" or outcome == "Wayward":
@@ -340,38 +343,34 @@ def get_player_stats_by_id(match_id: int, player_id: int):
     progr_att = 0
     progr_acc = 0
     for pass_ in passes:
-        outcome = pass_["pass_outcome"]
-        recipient = pass_["pass_recipient"]
-
         result["Touches"] += 1
 
-        if recipient is None:
+        if "recipient" not in pass_["pass"]:
             result["Possessions lost"] += 1
         else:
             result["Accurate Passes"] += 1
 
-        if pass_["pass_shot_assist"] == True:
+        if "shot_assist" in pass_["pass"]:
             result["Key Passes"] += 1
 
-        if pass_["pass_goal_assist"] == True:
+        if "goal_assist" in pass_["pass"]:
             result["Assists"] += 1
 
-        if pass_["pass_cross"] == True:
+        if "cross" in pass_["pass"]:
             crosses_att += 1
-            if recipient != math.nan: # FIXME
+            if "recipient" in pass_["pass"]:
                 crosses_acc += 1
 
         if is_progressive_pass(pass_):
             progr_att += 1
-            if recipient != math.nan: # FIXME
-                print(recipient)
+            if "recipient" in pass_["pass"]:
                 progr_acc += 1
 
     result["Crosses (acc.)"] = f'{crosses_att} ({crosses_acc})'
     result["Progressive Passes (acc.)"] = f'{progr_att} ({progr_acc})'
 
     for reception in receptions:
-        if reception["ball_receipt_outcome"] == "Incomplete":
+        if "ball_receipt" in reception and reception["ball_receipt"]["outcome"]["name"] == "Incomplete":
             result["Possessions lost"] += 1
         else:
             result["Touches"] += 1
@@ -382,20 +381,21 @@ def get_player_stats_by_id(match_id: int, player_id: int):
     aerial_duels_won = 0
     for clearance in clearances:
         result["Clearances"] += 1
-        if clearance["clearance_aerial_won"] == True:
+        if "aerial_won" in clearance["clearance"] and clearance["clearance"]["aerial_won"] == True:
             aerial_duels += 1
             aerial_duels_won += 1
 
     for duel in duels:
-        outcome = duel["duel_outcome"]
-        if duel["duel_type"] == "Aerial Lost":
+        if duel["duel"]["type"]["name"] == "Aerial Lost":
             aerial_duels += 1
-        elif duel["duel_type"] == "Tackle":
+        elif duel["duel"]["type"]["name"] == "Tackle":
             ground_duels += 1
             result["Tackles"] += 1
 
-        if outcome == "Won" or outcome == "Success" or outcome == "Success In Play" or outcome == "Success Out":
-            ground_duels_won += 1
+        if "outcome" in duel["duel"]:
+            outcome = duel["duel"]["outcome"]["name"]
+            if outcome == "Won" or outcome == "Success" or outcome == "Success In Play" or outcome == "Success Out":
+                ground_duels_won += 1
 
     result["Ground Duels (won)"] = f'{ground_duels} ({ground_duels_won})'
     result["Aerial Duels (won)"] = f'{aerial_duels} ({aerial_duels_won})'
@@ -405,7 +405,7 @@ def get_player_stats_by_id(match_id: int, player_id: int):
     result["Blocked Shots"] = len(blocks)
 
     for interception in interceptions:
-        outcome = interception["interception_outcome"]
+        outcome = interception["interception"]["outcome"]["name"]
         if outcome == "Won" or outcome == "Success" or outcome == "Success In Play" or outcome == "Success Out":
             result["Interceptions"] += 1
 
@@ -413,7 +413,7 @@ def get_player_stats_by_id(match_id: int, player_id: int):
     dribble_succ = 0
     for dribble in dribbles:
         dribble_att += 1
-        if dribble["dribble_outcome"] == "Complete":
+        if dribble["dribble"]["outcome"]["name"] == "Complete":
             dribble_succ += 1
 
     result["Dribble Attempts (succ.)"] = f'{dribble_att} ({dribble_succ})'
@@ -425,20 +425,24 @@ def get_player_stats_by_id(match_id: int, player_id: int):
 
 @app.get("/api/matches/{match_id}/shotchart")
 def getPlayerShots(match_id: int):
-    events = sb.events(match_id=match_id, split=True,
-                       flatten_attrs=False)
-    shots = events["shots"].to_dict(orient="records")
-    return json.loads(json.dumps(shots).replace("NaN", "null"))
+    events = list(requests.get(f"{data_url}/events/{match_id}.json").json())
+    shots = list(filter(lambda x: x["type"]["name"] == "Shot", events))
+    return shots
 
 
 @app.get("/api/matches/{match_id}/events")
 def get_match_events(match_id: int):
-    events = sb.events(match_id=match_id, split=True, flatten_attrs=True)
+    events = list(requests.get(f"{data_url}/events/{match_id}.json").json())
+    keys_to_ignore = ['Starting XI', 'Half Start', 'Half End',
+                      'Player Off', 'Player On', 'Substitution', 'Tactical Shift', 'Referee Ball-Drop', 'Injury Stoppage']
+    # Group events by type
     res = {}
-    keys_to_ignore = ['starting_xis', 'half_starts', 'half_ends',
-                      'player_offs', 'player_ons', 'substitutions', 'tactical_shifts']
-    for key in events.keys():
-        if key not in keys_to_ignore:
-            res[key] = events[key].to_dict(orient='records')
+    for event in events:
+        event_type = event["type"]["name"]
+        if event_type in keys_to_ignore:
+            continue
+        if event_type not in res:
+            res[event_type] = []
+        res[event_type].append(event)
 
-    return json.loads(json.dumps(res).replace("NaN", "null"))
+    return res
