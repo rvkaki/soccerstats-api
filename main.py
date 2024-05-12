@@ -252,7 +252,6 @@ def get_match_summary(match_id: int):
 @app.get("/api/matches/{match_id}/player-stats/{player_id}")
 def get_player_stats_by_id(match_id: int, player_id: int):
     result = {
-        "Minutes Played": 0,  # TODO: Maybe
         "Goals": 0,
         "Assists": 0,
         "Shots on Target": 0,
