@@ -2,7 +2,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import math
 import requests
+import json
 
+EURO_24_COMPETITION_ID = 55
+EURO_24_SEASON_ID = 282
 
 data_url = "https://raw.githubusercontent.com/statsbomb/open-data/master/data"
 
@@ -194,6 +197,10 @@ def get_match(competition_id: int, season_id: int, match_id: int):
 
 @app.get("/api/competitions/{competition_id}/season/{season_id}/matches/{match_id}/teams")
 def get_match_teams(competition_id: int, season_id: int, match_id: int):
+    players_info = {}
+    if (competition_id == EURO_24_COMPETITION_ID and season_id == EURO_24_SEASON_ID):
+        players_info = json.load(open("euro24_players.json"))
+
     events = list(requests.get(f"{data_url}/events/{match_id}.json").json())
 
     lineups = list(filter(lambda x: x["type"]
@@ -206,8 +213,11 @@ def get_match_teams(competition_id: int, season_id: int, match_id: int):
         team = lineup["team"]
         team_players = []
         for player in lineup["tactics"]["lineup"]:
+            player_id = player["player"]["id"]
+            player_info = players_info[str(player_id)] if str(player_id) in players_info else {
+                "jersey_number": None, "img": None, "nickname": None}
             team_players.append(
-                {**player["player"], "position": player["position"], "jersey_number": player["jersey_number"], "team_id": lineup["team"]["id"], "is_starter": True})
+                {**player["player"], "position": player["position"], "team_id": lineup["team"]["id"], "is_starter": True, "jersey_number": player["jersey_number"] if player["jersey_number"] else player_info["jersey_number"], "img": player_info["img"], "nickname": player_info["nickname"]})
         res.append({**team, "players": team_players})
 
     for substitution in substitutions:
@@ -215,10 +225,14 @@ def get_match_teams(competition_id: int, season_id: int, match_id: int):
         player = substitution["substitution"]["replacement"]
         player["position"] = substitution["position"]
         player["is_starter"] = False
+        player_id = player["id"]
+        player_info = players_info[str(player_id)] if str(player_id) in players_info else {
+            "jersey_number": None, "img": None, "nickname": None}
 
         for team in res:
             if team["id"] == team_id:
-                team["players"].append(player)
+                team["players"].append(
+                    {**player, "team_id": team_id, "jersey_number": player_info["jersey_number"], "img": player_info["img"], "nickname": player_info["nickname"]})
 
     return res
 
